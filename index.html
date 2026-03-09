@@ -8,7 +8,7 @@
 body{
     margin:0;
     overflow:hidden;
-    background:black;
+    background:rgb(0, 0, 0);
 }
 canvas{
     display:block;
@@ -22,7 +22,8 @@ canvas{
 <canvas id="game"></canvas>
 
 <script>
-    const canvas = document.getElementById("game");
+
+const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
 function resizeGame() {
@@ -34,6 +35,12 @@ window.addEventListener("resize", resizeGame);
 resizeGame();
 
 let gameState = "menu";
+
+const playerImg = new Image();
+playerImg.src = "images/ghost.png";
+
+const enemyImg = new Image();
+enemyImg.src = "images/ghost.png";
 
 let player = {
     x: 100,
@@ -66,7 +73,7 @@ let playButton = {
 
 let keys = {};
 let messages = [];
-let winner = ""; // [추가] 승자 텍스트 저장 변수 (약 42행)
+let winner = "";
 
 document.addEventListener("keydown", e => {
     keys[e.key] = true;
@@ -95,13 +102,17 @@ canvas.addEventListener("click", e => {
 
 function startBattle() {
     gameState = "battle";
-    winner = ""; // 시작 시 승자 초기화
+    winner = "";
+
     player.x = canvas.width * 0.25;
     player.y = canvas.height / 2;
+
     enemy.x = canvas.width * 0.75;
     enemy.y = canvas.height / 2;
+
     player.hp = 4;
     enemy.hp = 4;
+
     player.vx = 0;
     player.vy = 0;
 }
@@ -121,7 +132,7 @@ function addMessage(text, x, y) {
 }
 
 function updateBattle() {
-    // 승자가 결정된 상태라면 움직임 계산을 중단 (멈춤 효과)
+
     if (winner !== "") return;
 
     let ax = 0;
@@ -133,6 +144,7 @@ function updateBattle() {
     if (keys["ArrowDown"]) ay += 1;
 
     let len = Math.sqrt(ax * ax + ay * ay);
+
     if (len > 0) {
         ax /= len;
         ay /= len;
@@ -140,15 +152,21 @@ function updateBattle() {
 
     player.vx += ax * player.accel;
     player.vy += ay * player.accel;
+
     player.x += player.vx;
     player.y += player.vy;
+
     player.vx *= player.friction;
     player.vy *= player.friction;
 
     if (player.x < 0) player.x = 0;
     if (player.y < 0) player.y = 0;
-    if (player.x + player.size > canvas.width) player.x = canvas.width - player.size;
-    if (player.y + player.size > canvas.height) player.y = canvas.height - player.size;
+
+    if (player.x + player.size > canvas.width)
+        player.x = canvas.width - player.size;
+
+    if (player.y + player.size > canvas.height)
+        player.y = canvas.height - player.size;
 
     let dx = player.x - enemy.x;
     let dy = player.y - enemy.y;
@@ -159,38 +177,51 @@ function updateBattle() {
         enemy.y += (dy / dist) * enemy.speed;
     }
 
-    let cx = (player.x + player.size / 2) - (enemy.x + enemy.size / 2);
-    let cy = (player.y + player.size / 2) - (enemy.y + enemy.size / 2);
-    let distance = Math.sqrt(cx * cx + cy * cy);
+    let cx = (player.x + player.size/2) - (enemy.x + enemy.size/2);
+    let cy = (player.y + player.size/2) - (enemy.y + enemy.size/2);
+
+    let distance = Math.sqrt(cx*cx + cy*cy);
     let minDist = player.size;
 
     if (distance < minDist) {
+
         let overlap = minDist - distance;
         let nx = cx / distance;
         let ny = cy / distance;
-        player.x += nx * overlap / 2;
-        player.y += ny * overlap / 2;
-        enemy.x -= nx * overlap / 2;
-        enemy.y -= ny * overlap / 2;
+
+        player.x += nx * overlap/2;
+        player.y += ny * overlap/2;
+
+        enemy.x -= nx * overlap/2;
+        enemy.y -= ny * overlap/2;
     }
 
     let now = Date.now();
+
     if (distance < player.size) {
+
         if (now - player.lastAttack > 500) {
+
             player.lastAttack = now;
+
             if (Math.random() > 0.75) {
                 enemy.hp--;
                 addMessage("HIT!", enemy.x, enemy.y);
-            } else {
+            }
+            else {
                 addMessage("RESIST", enemy.x, enemy.y);
             }
         }
+
         if (now - enemy.lastAttack > 500) {
+
             enemy.lastAttack = now;
+
             if (Math.random() > 0.75) {
                 player.hp--;
                 addMessage("HIT!", player.x, player.y);
-            } else {
+            }
+            else {
                 addMessage("RESIST", player.x, player.y);
             }
         }
@@ -198,10 +229,12 @@ function updateBattle() {
 
     messages = messages.filter(m => Date.now() - m.time < 700);
 
-    // [수정] 승자 판정 및 1초 후 메뉴 이동 (약 150행)
     if (player.hp <= 0 || enemy.hp <= 0) {
-        if (winner === "") { 
+
+        if (winner === "") {
+
             winner = (player.hp <= 0) ? "ENEMY WINS!" : "PLAYER WINS!";
+
             setTimeout(() => {
                 returnToMenu();
             }, 1000);
@@ -209,82 +242,93 @@ function updateBattle() {
     }
 }
 
-function drawHPBar(x, y, hp) {
+function drawHPBar(x,y,hp){
+
     const width = 60;
     const height = 8;
-    ctx.fillStyle = "gray";
-    ctx.fillRect(x, y, width, height);
-    ctx.fillStyle = "lime";
-    ctx.fillRect(x, y, width * (hp / 4), height);
+
+    ctx.fillStyle="gray";
+    ctx.fillRect(x,y,width,height);
+
+    ctx.fillStyle="lime";
+    ctx.fillRect(x,y,width*(hp/4),height);
 }
 
-function drawMenu() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    player.x = canvas.width * 0.2;
-    player.y = canvas.height / 2;
-    enemy.x = canvas.width * 0.8;
-    enemy.y = canvas.height / 2;
+function drawMenu(){
 
-    ctx.fillStyle = "red";
-    ctx.fillRect(player.x, player.y, player.size, player.size);
-    ctx.fillStyle = "blue";
-    ctx.fillRect(enemy.x, enemy.y, enemy.size, enemy.size);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    playButton.x = canvas.width / 2 - playButton.width / 2;
-    playButton.y = canvas.height / 2 - playButton.height / 2;
-    ctx.fillStyle = "white";
+    player.x = canvas.width*0.2;
+    player.y = canvas.height/2;
+
+    enemy.x = canvas.width*0.8;
+    enemy.y = canvas.height/2;
+
+    ctx.drawImage(playerImg, player.x, player.y, player.size, player.size);
+    ctx.drawImage(enemyImg, enemy.x, enemy.y, enemy.size, enemy.size);
+
+    playButton.x = canvas.width/2 - playButton.width/2;
+    playButton.y = canvas.height/2 - playButton.height/2;
+
+    ctx.fillStyle="white";
     ctx.fillRect(playButton.x, playButton.y, playButton.width, playButton.height);
-    ctx.fillStyle = "black";
-    ctx.font = "40px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText("PLAY", canvas.width / 2, canvas.height / 2 + 15);
+
+    ctx.fillStyle="black";
+    ctx.font="40px Arial";
+    ctx.textAlign="center";
+    ctx.fillText("PLAY", canvas.width/2, canvas.height/2+15);
 }
 
-function drawBattle() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+function drawBattle(){
 
-    ctx.fillStyle = "red";
-    ctx.fillRect(player.x, player.y, player.size, player.size);
-    ctx.fillStyle = "blue";
-    ctx.fillRect(enemy.x, enemy.y, enemy.size, enemy.size);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    drawHPBar(player.x, player.y - 15, player.hp);
-    drawHPBar(enemy.x, enemy.y - 15, enemy.hp);
+    ctx.drawImage(playerImg, player.x, player.y, player.size, player.size);
+    ctx.drawImage(enemyImg, enemy.x, enemy.y, enemy.size, enemy.size);
 
-    ctx.fillStyle = "white";
-    ctx.font = "18px Arial";
-    ctx.textAlign = "left"; 
+    drawHPBar(player.x,player.y-15,player.hp);
+    drawHPBar(enemy.x,enemy.y-15,enemy.hp);
 
-    messages.forEach(m => {
-        ctx.fillText(m.text, m.x, m.y);
+    ctx.fillStyle="white";
+    ctx.font="18px Arial";
+    ctx.textAlign="left";
+
+    messages.forEach(m=>{
+        ctx.fillText(m.text,m.x,m.y);
     });
 
-    // [추가] 화면 중앙 승자 표시 (약 188행)
-    if (winner !== "") {
-        ctx.fillStyle = "yellow";
-        ctx.font = "bold 60px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText(winner, canvas.width / 2, canvas.height / 2);
-        ctx.textAlign = "left"; 
+    if(winner!==""){
+
+        ctx.fillStyle="yellow";
+        ctx.font="bold 60px Arial";
+        ctx.textAlign="center";
+
+        ctx.fillText(winner,canvas.width/2,canvas.height/2);
+
+        ctx.textAlign="left";
     }
 
-    ctx.strokeStyle = "white";
-    ctx.lineWidth = 4;
-    ctx.strokeRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle="white";
+    ctx.lineWidth=4;
+    ctx.strokeRect(0,0,canvas.width,canvas.height);
 }
 
-function gameLoop() {
-    if (gameState === "menu") {
+function gameLoop(){
+
+    if(gameState==="menu"){
         drawMenu();
     }
-    if (gameState === "battle") {
+
+    if(gameState==="battle"){
         updateBattle();
         drawBattle();
     }
+
     requestAnimationFrame(gameLoop);
 }
 
 gameLoop();
+
 </script>
 
 </body>

@@ -2,16 +2,41 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>AI Battle</title>
+<title>AI Battle - Bounty System</title>
 
 <style>
 body{
     margin:0;
     overflow:hidden;
     background:rgb(0, 0, 0);
+    font-family: Arial, sans-serif;
 }
 canvas{
     display:block;
+}
+#ui-layer {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: white;
+    z-index: 10000;
+}
+input {
+    padding: 10px;
+    font-size: 18px;
+    border-radius: 5px;
+    border: none;
+    margin-bottom: 10px;
+}
+button#start-btn {
+    padding: 10px 20px;
+    font-size: 18px;
+    cursor: pointer;
+    background: #fff;
+    border: none;
+    border-radius: 5px;
 }
 </style>
 
@@ -19,11 +44,18 @@ canvas{
 
 <body>
 
+<div id="ui-layer">
+    <h2>AI BATTLE</h2>
+    <input type="text" id="nickname-input" placeholder="Enter Nickname" maxlength="10">
+    <br>
+    <button id="start-btn">Game Start</button>
+</div>
+
 <canvas id="game"></canvas>
 
 <script>
 
-    function isMobile() {
+function isMobile() {
     return (
         'ontouchstart' in window ||
         navigator.maxTouchPoints > 0 ||
@@ -36,36 +68,26 @@ if (isMobile()) {
 }
 
 function createMobileControls(){
-
     const size = 90;
     const gap = 10;
-
     const baseX = 20;
     const baseY = 20;
 
     function makeBtn(symbol, key, x, y){
-
         const btn = document.createElement("div");
-
         btn.innerHTML = symbol;
-
         btn.style.position = "fixed";
         btn.style.left = x + "px";
         btn.style.bottom = y + "px";
-
         btn.style.width = size + "px";
         btn.style.height = size + "px";
-
         btn.style.background = "rgba(255,255,255,0.25)";
         btn.style.borderRadius = "50%";
-
         btn.style.display = "flex";
         btn.style.alignItems = "center";
         btn.style.justifyContent = "center";
-
         btn.style.fontSize = "40px";
         btn.style.color = "white";
-
         btn.style.zIndex = "9999";
         btn.style.userSelect = "none";
 
@@ -73,12 +95,10 @@ function createMobileControls(){
             e.preventDefault();
             document.dispatchEvent(new KeyboardEvent("keydown",{key:key}));
         });
-
         btn.addEventListener("touchend", e=>{
             e.preventDefault();
             document.dispatchEvent(new KeyboardEvent("keyup",{key:key}));
         });
-
         document.body.appendChild(btn);
     }
 
@@ -86,7 +106,6 @@ function createMobileControls(){
     makeBtn("←","ArrowLeft", baseX, baseY + size + gap);
     makeBtn("→","ArrowRight", baseX + size*2 + gap*2, baseY + size + gap);
     makeBtn("↓","ArrowDown", baseX + size + gap, baseY);
-
 }
 
 const canvas = document.getElementById("game");
@@ -100,7 +119,13 @@ function resizeGame() {
 window.addEventListener("resize", resizeGame);
 resizeGame();
 
-let gameState = "menu";
+let gameState = "nickname"; 
+let playerNickname = "Player";
+let playerScore = 0; 
+
+let aiPersistentScores = {};
+const aiNames = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India", "Juliet"];
+aiNames.forEach(name => aiPersistentScores[name] = 0);
 
 const playerImg = new Image();
 playerImg.src = "images/ghost.png";
@@ -121,14 +146,8 @@ let player = {
     lastAttack: 0
 };
 
-let enemy = {
-    x: 800,
-    y: 300,
-    size: 60,
-    hp: 4,
-    speed: 2,
-    lastAttack: 0
-};
+let enemies = [];
+let lastSpawnTime = 0;
 
 let playButton = {
     width: 200,
@@ -141,6 +160,15 @@ let keys = {};
 let messages = [];
 let winner = "";
 
+document.getElementById("start-btn").addEventListener("click", () => {
+    const input = document.getElementById("nickname-input");
+    if(input.value.trim() !== "") {
+        playerNickname = input.value;
+    }
+    document.getElementById("ui-layer").style.display = "none";
+    gameState = "menu";
+});
+
 document.addEventListener("keydown", e => {
     keys[e.key] = true;
 });
@@ -150,11 +178,11 @@ document.addEventListener("keyup", e => {
 });
 
 canvas.addEventListener("click", e => {
-    if (gameState === "menu") {
-        let rect = canvas.getBoundingClientRect();
-        let mx = e.clientX - rect.left;
-        let my = e.clientY - rect.top;
+    let rect = canvas.getBoundingClientRect();
+    let mx = e.clientX - rect.left;
+    let my = e.clientY - rect.top;
 
+    if (gameState === "menu") {
         if (
             mx > playButton.x &&
             mx < playButton.x + playButton.width &&
@@ -163,29 +191,64 @@ canvas.addEventListener("click", e => {
         ) {
             startBattle();
         }
+    } else if (gameState === "battle" && player.hp <= 0) {
+        if (
+            mx > canvas.width/2 - 100 && mx < canvas.width/2 + 100 &&
+            my > canvas.height/2 + 50 && my < canvas.height/2 + 130
+        ) {
+            respawnPlayer();
+        }
     }
 });
+
+function createEnemy() {
+    if (enemies.length >= 10) return;
+
+    const currentAiNames = enemies.map(en => en.name);
+    const availableNames = aiNames.filter(name => !currentAiNames.includes(name));
+    
+    const assignedName = availableNames.length > 0 
+        ? availableNames[Math.floor(Math.random() * availableNames.length)] 
+        : "Bot_" + Math.floor(Math.random() * 100);
+
+    let initialScore = aiPersistentScores[assignedName] || 0;
+
+    enemies.push({
+        x: Math.random() * (canvas.width - 60),
+        y: Math.random() * (canvas.height - 60),
+        size: 60,
+        hp: 4,
+        score: initialScore,
+        speed: 1.5 + Math.random(),
+        lastAttack: 0,
+        id: Date.now() + Math.random(),
+        name: assignedName 
+    });
+}
 
 function startBattle() {
     gameState = "battle";
     winner = "";
-
+    enemies = [];
+    playerScore = 0; 
+    aiNames.forEach(name => aiPersistentScores[name] = 0);
+    player.hp = 4;
     player.x = canvas.width * 0.25;
     player.y = canvas.height / 2;
-
-    enemy.x = canvas.width * 0.75;
-    enemy.y = canvas.height / 2;
-
-    player.hp = 4;
-    enemy.hp = 4;
-
     player.vx = 0;
     player.vy = 0;
+    createEnemy();
+    lastSpawnTime = Date.now();
 }
 
-function returnToMenu() {
-    gameState = "menu";
-    messages = [];
+function respawnPlayer() {
+    player.hp = 4;
+    playerScore = Math.floor(playerScore / 2);
+    player.x = Math.random() * (canvas.width - player.size);
+    player.y = Math.random() * (canvas.height - player.size);
+    player.vx = 0;
+    player.vy = 0;
+    winner = ""; 
 }
 
 function addMessage(text, x, y) {
@@ -198,147 +261,199 @@ function addMessage(text, x, y) {
 }
 
 function updateBattle() {
-
-    if (winner !== "") return;
-
-    let ax = 0;
-    let ay = 0;
-
-    if (keys["ArrowLeft"]) ax -= 1;
-    if (keys["ArrowRight"]) ax += 1;
-    if (keys["ArrowUp"]) ay -= 1;
-    if (keys["ArrowDown"]) ay += 1;
-
-    let len = Math.sqrt(ax * ax + ay * ay);
-
-    if (len > 0) {
-        ax /= len;
-        ay /= len;
-    }
-
-    player.vx += ax * player.accel;
-    player.vy += ay * player.accel;
-
-    player.x += player.vx;
-    player.y += player.vy;
-
-    player.vx *= player.friction;
-    player.vy *= player.friction;
-
-    if (player.x < 0) player.x = 0;
-    if (player.y < 0) player.y = 0;
-
-    if (player.x + player.size > canvas.width)
-        player.x = canvas.width - player.size;
-
-    if (player.y + player.size > canvas.height)
-        player.y = canvas.height - player.size;
-
-    let dx = player.x - enemy.x;
-    let dy = player.y - enemy.y;
-    let dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist > 0) {
-        enemy.x += (dx / dist) * enemy.speed;
-        enemy.y += (dy / dist) * enemy.speed;
-    }
-
-    let cx = (player.x + player.size/2) - (enemy.x + enemy.size/2);
-    let cy = (player.y + player.size/2) - (enemy.y + enemy.size/2);
-
-    let distance = Math.sqrt(cx*cx + cy*cy);
-    let minDist = player.size;
-
-    if (distance < minDist) {
-
-        let overlap = minDist - distance;
-        let nx = cx / distance;
-        let ny = cy / distance;
-
-        player.x += nx * overlap/2;
-        player.y += ny * overlap/2;
-
-        enemy.x -= nx * overlap/2;
-        enemy.y -= ny * overlap/2;
-    }
-
     let now = Date.now();
 
-    if (distance < player.size) {
-
-        if (now - player.lastAttack > 500) {
-
-            player.lastAttack = now;
-
-            if (Math.random() > 0.75) {
-                enemy.hp--;
-                addMessage("HIT!", enemy.x, enemy.y);
-            }
-            else {
-                addMessage("RESIST", enemy.x, enemy.y);
-            }
-        }
-
-        if (now - enemy.lastAttack > 500) {
-
-            enemy.lastAttack = now;
-
-            if (Math.random() > 0.75) {
-                player.hp--;
-                addMessage("HIT!", player.x, player.y);
-            }
-            else {
-                addMessage("RESIST", player.x, player.y);
-            }
-        }
+    if (now - lastSpawnTime > 5000) {
+        createEnemy();
+        lastSpawnTime = now;
     }
 
+    if (player.hp > 0) {
+        let ax = 0, ay = 0;
+        if (keys["ArrowLeft"]) ax -= 1;
+        if (keys["ArrowRight"]) ax += 1;
+        if (keys["ArrowUp"]) ay -= 1;
+        if (keys["ArrowDown"]) ay += 1;
+        let len = Math.sqrt(ax * ax + ay * ay);
+        if (len > 0) { ax /= len; ay /= len; }
+        player.vx += ax * player.accel;
+        player.vy += ay * player.accel;
+        player.x += player.vx;
+        player.y += player.vy;
+        player.vx *= player.friction;
+        player.vy *= player.friction;
+    }
+
+    player.x = Math.max(0, Math.min(canvas.width - player.size, player.x));
+    player.y = Math.max(0, Math.min(canvas.height - player.size, player.y));
+
+    enemies.forEach((en) => {
+        let targets = [];
+        if (player.hp > 0) targets.push({x: player.x, y: player.y, isPlayer: true});
+        enemies.forEach(other => {
+            if (other.id !== en.id) targets.push({x: other.x, y: other.y, isPlayer: false});
+        });
+
+        let closest = null;
+        let minDist = Infinity;
+        targets.forEach(t => {
+            let d = Math.sqrt((en.x - t.x)**2 + (en.y - t.y)**2);
+            if (d < minDist) { minDist = d; closest = t; }
+        });
+
+        if (closest) {
+            let dx = closest.x - en.x;
+            let dy = closest.y - en.y;
+            if (minDist > 0) {
+                let direction = (en.hp <= 2) ? -1 : 1;
+                en.x += (dx / minDist) * en.speed * direction;
+                en.y += (dy / minDist) * en.speed * direction;
+            }
+        }
+
+        en.x = Math.max(0, Math.min(canvas.width - en.size, en.x));
+        en.y = Math.max(0, Math.min(canvas.height - en.size, en.y));
+
+        if (player.hp > 0) {
+            let dx = (player.x + player.size/2) - (en.x + en.size/2);
+            let dy = (player.y + player.size/2) - (en.y + en.size/2);
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < player.size) {
+                let overlap = player.size - dist;
+                let nx = dx / dist; let ny = dy / dist;
+                player.x += nx * overlap/2; player.y += ny * overlap/2;
+                en.x -= nx * overlap/2; en.y -= ny * overlap/2;
+
+                if (now - player.lastAttack > 500) {
+                    player.lastAttack = now;
+                    if (Math.random() > 0.7) {
+                        if (en.hp === 1) { 
+                            player.hp = 4; 
+                            // 킬 보너스: 기본 100 + 상대 점수의 10%
+                            let bounty = 100 + Math.floor(en.score * 0.1);
+                            playerScore += bounty; 
+                            addMessage(`KILL! +${bounty}`, player.x, player.y); 
+                        }
+                        en.hp--; addMessage("HIT!", en.x, en.y);
+                    }
+                }
+                if (now - en.lastAttack > 500) {
+                    en.lastAttack = now;
+                    if (Math.random() > 0.8) {
+                        if (player.hp === 1) { 
+                            en.hp = 4; 
+                            // AI가 플레이어 처치 시 보너스
+                            let bounty = 100 + Math.floor(playerScore * 0.1);
+                            en.score += bounty; 
+                            aiPersistentScores[en.name] = en.score;
+                            addMessage(`AI KILL! +${bounty}`, en.x, en.y); 
+                        }
+                        player.hp--; addMessage("HIT!", player.x, player.y);
+                    }
+                }
+            }
+        }
+
+        enemies.forEach(other => {
+            if (en.id === other.id) return;
+            let dx = (other.x + other.size/2) - (en.x + en.size/2);
+            let dy = (other.y + other.size/2) - (en.y + en.size/2);
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < en.size) {
+                let overlap = en.size - dist;
+                en.x -= (dx/dist) * overlap/2; en.y -= (dy/dist) * overlap/2;
+                other.x += (dx/dist) * overlap/2; other.y += (dy/dist) * overlap/2;
+
+                if (now - en.lastAttack > 800) {
+                    en.lastAttack = now;
+                    if (Math.random() > 0.75) {
+                        if (other.hp === 1) { 
+                            en.hp = 4; 
+                            // AI가 AI 처치 시 보너스
+                            let bounty = 100 + Math.floor(other.score * 0.1);
+                            en.score += bounty; 
+                            aiPersistentScores[en.name] = en.score;
+                            addMessage(`AI KILL! +${bounty}`, en.x, en.y); 
+                        }
+                        other.hp--; addMessage("AI HIT!", other.x, other.y);
+                    }
+                }
+            }
+        });
+    });
+
+    enemies.forEach(en => {
+        if(en.hp <= 0) {
+            aiPersistentScores[en.name] = Math.floor(en.score / 2);
+        }
+    });
+
+    enemies = enemies.filter(en => en.hp > 0);
     messages = messages.filter(m => Date.now() - m.time < 700);
 
-    if (player.hp <= 0 || enemy.hp <= 0) {
-
-        if (winner === "") {
-
-            winner = (player.hp <= 0) ? "ENEMY WINS!" : "PLAYER WINS!";
-
-            setTimeout(() => {
-                returnToMenu();
-            }, 1000);
-        }
-    }
+    if (player.hp <= 0 && winner === "") { winner = "YOU DIED"; }
 }
 
-function drawHPBar(x,y,hp){
-
+function drawHPBar(x, y, hp, isPlayer = false, name = ""){
     const width = 60;
     const height = 8;
+    ctx.fillStyle = "white";
+    ctx.font = "bold 14px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(name, x + width/2, y - 20);
 
     ctx.fillStyle="gray";
-    ctx.fillRect(x,y,width,height);
+    ctx.fillRect(x, y, width, height);
+    if(isPlayer) { ctx.fillStyle = (hp > 2) ? "blue" : "red"; }
+    else { ctx.fillStyle = (hp > 2) ? "lime" : "yellow"; }
+    ctx.fillRect(x, y, width * (Math.max(0, hp) / 4), height);
+}
 
-    ctx.fillStyle="lime";
-    ctx.fillRect(x,y,width*(hp/4),height);
+function drawLeaderboard() {
+    let participants = [{ name: playerNickname, score: playerScore, isPlayer: true }];
+    
+    enemies.forEach(en => {
+        participants.push({ name: en.name, score: en.score, isPlayer: false });
+    });
+
+    const activeNames = enemies.map(en => en.name);
+    aiNames.forEach(name => {
+        if(!activeNames.includes(name)) {
+            participants.push({ name: name, score: aiPersistentScores[name], isPlayer: false });
+        }
+    });
+
+    participants.sort((a, b) => b.score - a.score);
+    let top5 = participants.slice(0, 5);
+
+    const x = 20;
+    const y = 20;
+    const w = 220;
+    const h = 30 + (top5.length * 25);
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+    ctx.strokeRect(x, y, w, h);
+
+    ctx.fillStyle = "yellow";
+    ctx.font = "bold 16px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("TOP 5 RANKING", x + 15, y + 25);
+
+    top5.forEach((p, idx) => {
+        ctx.fillStyle = p.isPlayer ? "#00ffff" : "white"; 
+        ctx.font = p.isPlayer ? "bold 15px Arial" : "14px Arial";
+        ctx.fillText(`${idx + 1}. ${p.name}: ${p.score}`, x + 15, y + 55 + (idx * 25));
+    });
 }
 
 function drawMenu(){
-
     ctx.clearRect(0,0,canvas.width,canvas.height);
-
-    player.x = canvas.width*0.2;
-    player.y = canvas.height/2;
-
-    enemy.x = canvas.width*0.8;
-    enemy.y = canvas.height/2;
-
-    ctx.drawImage(playerImg, player.x, player.y, player.size, player.size);
-    ctx.drawImage(enemyImg, enemy.x, enemy.y, enemy.size, enemy.size);
-
     playButton.x = canvas.width/2 - playButton.width/2;
     playButton.y = canvas.height/2 - playButton.height/2;
-
     ctx.fillStyle="white";
     ctx.fillRect(playButton.x, playButton.y, playButton.width, playButton.height);
-
     ctx.fillStyle="black";
     ctx.font="40px Arial";
     ctx.textAlign="center";
@@ -346,50 +461,52 @@ function drawMenu(){
 }
 
 function drawBattle(){
-
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    ctx.drawImage(playerImg, player.x, player.y, player.size, player.size);
-    ctx.drawImage(enemyImg, enemy.x, enemy.y, enemy.size, enemy.size);
+    if (player.hp > 0) {
+        ctx.drawImage(playerImg, player.x, player.y, player.size, player.size);
+        drawHPBar(player.x, player.y-15, player.hp, true, playerNickname); 
+    }
 
-    drawHPBar(player.x,player.y-15,player.hp);
-    drawHPBar(enemy.x,enemy.y-15,enemy.hp);
+    enemies.forEach(en => {
+        ctx.drawImage(enemyImg, en.x, en.y, en.size, en.size);
+        drawHPBar(en.x, en.y-15, en.hp, false, en.name);
+    });
 
     ctx.fillStyle="white";
     ctx.font="18px Arial";
     ctx.textAlign="left";
+    messages.forEach(m=>{ ctx.fillText(m.text,m.x,m.y); });
 
-    messages.forEach(m=>{
-        ctx.fillText(m.text,m.x,m.y);
-    });
+    drawLeaderboard();
 
-    if(winner!==""){
-
-        ctx.fillStyle="yellow";
-        ctx.font="bold 60px Arial";
+    if(player.hp <= 0){
+        ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle="red";
+        ctx.font="bold 70px Arial";
         ctx.textAlign="center";
-
-        ctx.fillText(winner,canvas.width/2,canvas.height/2);
-
-        ctx.textAlign="left";
+        ctx.fillText("YOU DIED", canvas.width/2, canvas.height/2);
+        ctx.fillStyle="white";
+        ctx.fillRect(canvas.width/2 - 100, canvas.height/2 + 50, 200, 80);
+        ctx.fillStyle="black";
+        ctx.font="30px Arial";
+        ctx.fillText("Play Again", canvas.width/2, canvas.height/2 + 100);
     }
 
+    ctx.fillStyle="white";
+    ctx.font="20px Arial";
+    ctx.textAlign="right";
+    ctx.fillText("Enemies: " + enemies.length + "/10", canvas.width - 20, 30);
     ctx.strokeStyle="white";
     ctx.lineWidth=4;
     ctx.strokeRect(0,0,canvas.width,canvas.height);
 }
 
 function gameLoop(){
-
-    if(gameState==="menu"){
-        drawMenu();
-    }
-
-    if(gameState==="battle"){
-        updateBattle();
-        drawBattle();
-    }
-
+    if(gameState==="nickname") ctx.clearRect(0,0,canvas.width,canvas.height);
+    if(gameState==="menu") drawMenu();
+    if(gameState==="battle") { updateBattle(); drawBattle(); }
     requestAnimationFrame(gameLoop);
 }
 

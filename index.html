@@ -23,6 +23,72 @@ canvas{
 
 <script>
 
+    function isMobile() {
+    return (
+        'ontouchstart' in window ||
+        navigator.maxTouchPoints > 0 ||
+        navigator.msMaxTouchPoints > 0
+    );
+}
+
+if (isMobile()) {
+    createMobileControls();
+}
+
+function createMobileControls(){
+
+    const size = 90;
+    const gap = 10;
+
+    const baseX = 20;
+    const baseY = 20;
+
+    function makeBtn(symbol, key, x, y){
+
+        const btn = document.createElement("div");
+
+        btn.innerHTML = symbol;
+
+        btn.style.position = "fixed";
+        btn.style.left = x + "px";
+        btn.style.bottom = y + "px";
+
+        btn.style.width = size + "px";
+        btn.style.height = size + "px";
+
+        btn.style.background = "rgba(255,255,255,0.25)";
+        btn.style.borderRadius = "50%";
+
+        btn.style.display = "flex";
+        btn.style.alignItems = "center";
+        btn.style.justifyContent = "center";
+
+        btn.style.fontSize = "40px";
+        btn.style.color = "white";
+
+        btn.style.zIndex = "9999";
+        btn.style.userSelect = "none";
+
+        btn.addEventListener("touchstart", e=>{
+            e.preventDefault();
+            document.dispatchEvent(new KeyboardEvent("keydown",{key:key}));
+        });
+
+        btn.addEventListener("touchend", e=>{
+            e.preventDefault();
+            document.dispatchEvent(new KeyboardEvent("keyup",{key:key}));
+        });
+
+        document.body.appendChild(btn);
+    }
+
+    makeBtn("↑","ArrowUp", baseX + size + gap, baseY + size*2 + gap*2);
+    makeBtn("←","ArrowLeft", baseX, baseY + size + gap);
+    makeBtn("→","ArrowRight", baseX + size*2 + gap*2, baseY + size + gap);
+    makeBtn("↓","ArrowDown", baseX + size + gap, baseY);
+
+}
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 

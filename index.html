@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>AI Battle - Bounty System</title>
+<title>AI Battle - Bounty System (Delta Time)</title>
 
 <style>
 body{
@@ -149,6 +149,10 @@ let player = {
 let enemies = [];
 let lastSpawnTime = 0;
 
+// Delta Time 관련 변수
+let lastTime = 0;
+const TARGET_FPS = 120;
+
 let playButton = {
     width: 200,
     height: 80,
@@ -239,6 +243,7 @@ function startBattle() {
     player.vy = 0;
     createEnemy();
     lastSpawnTime = Date.now();
+    lastTime = 0; // 타임스탬프 초기화
 }
 
 function respawnPlayer() {
@@ -260,8 +265,10 @@ function addMessage(text, x, y) {
     });
 }
 
-function updateBattle() {
+function updateBattle(dt) {
     let now = Date.now();
+    // 120 FPS 기준 보정값
+    const correction = dt * TARGET_FPS;
 
     if (now - lastSpawnTime > 5000) {
         createEnemy();
@@ -276,12 +283,16 @@ function updateBattle() {
         if (keys["ArrowDown"]) ay += 1;
         let len = Math.sqrt(ax * ax + ay * ay);
         if (len > 0) { ax /= len; ay /= len; }
-        player.vx += ax * player.accel;
-        player.vy += ay * player.accel;
-        player.x += player.vx;
-        player.y += player.vy;
-        player.vx *= player.friction;
-        player.vy *= player.friction;
+
+        // 보정값을 적용한 가속 및 이동
+        player.vx += (ax * player.accel) * correction;
+        player.vy += (ay * player.accel) * correction;
+        player.x += player.vx * correction;
+        player.y += player.vy * correction;
+        
+        // 지수적 마찰력 보정
+        player.vx *= Math.pow(player.friction, correction);
+        player.vy *= Math.pow(player.friction, correction);
     }
 
     player.x = Math.max(0, Math.min(canvas.width - player.size, player.x));
@@ -306,8 +317,9 @@ function updateBattle() {
             let dy = closest.y - en.y;
             if (minDist > 0) {
                 let direction = (en.hp <= 2) ? -1 : 1;
-                en.x += (dx / minDist) * en.speed * direction;
-                en.y += (dy / minDist) * en.speed * direction;
+                // AI 이동 속도 보정
+                en.x += (dx / minDist) * en.speed * direction * correction;
+                en.y += (dy / minDist) * en.speed * direction * correction;
             }
         }
 
@@ -329,7 +341,6 @@ function updateBattle() {
                     if (Math.random() > 0.7) {
                         if (en.hp === 1) { 
                             player.hp = 4; 
-                            // 킬 보너스: 기본 100 + 상대 점수의 10%
                             let bounty = 100 + Math.floor(en.score * 0.1);
                             playerScore += bounty; 
                             addMessage(`KILL! +${bounty}`, player.x, player.y); 
@@ -342,7 +353,6 @@ function updateBattle() {
                     if (Math.random() > 0.8) {
                         if (player.hp === 1) { 
                             en.hp = 4; 
-                            // AI가 플레이어 처치 시 보너스
                             let bounty = 100 + Math.floor(playerScore * 0.1);
                             en.score += bounty; 
                             aiPersistentScores[en.name] = en.score;
@@ -369,7 +379,6 @@ function updateBattle() {
                     if (Math.random() > 0.75) {
                         if (other.hp === 1) { 
                             en.hp = 4; 
-                            // AI가 AI 처치 시 보너스
                             let bounty = 100 + Math.floor(other.score * 0.1);
                             en.score += bounty; 
                             aiPersistentScores[en.name] = en.score;
@@ -503,14 +512,25 @@ function drawBattle(){
     ctx.strokeRect(0,0,canvas.width,canvas.height);
 }
 
-function gameLoop(){
+function gameLoop(timestamp){
+    if(!lastTime) lastTime = timestamp;
+    let dt = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+
+    // 비정상적인 프레임 지연(탭 전환 등) 방지
+    if (dt > 0.1) dt = 1 / TARGET_FPS;
+
     if(gameState==="nickname") ctx.clearRect(0,0,canvas.width,canvas.height);
     if(gameState==="menu") drawMenu();
-    if(gameState==="battle") { updateBattle(); drawBattle(); }
+    if(gameState==="battle") { 
+        updateBattle(dt); 
+        drawBattle(); 
+    }
     requestAnimationFrame(gameLoop);
 }
 
-gameLoop();
+// 루프 시작
+requestAnimationFrame(gameLoop);
 
 </script>
 

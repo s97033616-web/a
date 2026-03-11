@@ -14,6 +14,7 @@ body{
 canvas{
     display:block;
 }
+/* 기존 로비 UI */
 #ui-layer {
     position: fixed;
     top: 50%;
@@ -23,20 +24,43 @@ canvas{
     color: white;
     z-index: 10000;
 }
-input {
+/* 세이브 코드 표시용 새 레이어 */
+#save-layer {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: white;
+    background: rgba(0, 0, 0, 0.9);
+    padding: 30px;
+    border: 2px solid white;
+    border-radius: 10px;
+    display: none; 
+    z-index: 10001;
+}
+input, textarea {
     padding: 10px;
-    font-size: 18px;
+    font-size: 16px;
     border-radius: 5px;
     border: none;
     margin-bottom: 10px;
+    width: 250px;
 }
-button#start-btn {
+#load-input {
+    background: #222;
+    color: #0ff;
+    border: 1px solid #444;
+    font-size: 12px;
+}
+button {
     padding: 10px 20px;
     font-size: 18px;
     cursor: pointer;
     background: #fff;
     border: none;
     border-radius: 5px;
+    margin-top: 10px;
 }
 </style>
 
@@ -48,7 +72,17 @@ button#start-btn {
     <h2>AI BATTLE</h2>
     <input type="text" id="nickname-input" placeholder="Enter Nickname" maxlength="10">
     <br>
+    <input type="text" id="load-input" placeholder="Paste Save Code Here (Optional)">
+    <br>
     <button id="start-btn">Game Start</button>
+</div>
+
+<div id="save-layer">
+    <h3>SAVE YOUR PROGRESS</h3>
+    <p>Copy this code to load your EXP later:</p>
+    <textarea id="save-code-display" readonly rows="3"></textarea>
+    <br>
+    <button id="save-confirm-btn">Confirm & Go to Lobby</button>
 </div>
 
 <canvas id="game"></canvas>
@@ -122,6 +156,7 @@ resizeGame();
 let gameState = "nickname"; 
 let playerNickname = "Player";
 let playerScore = 0; 
+let totalEXP = 0; 
 
 let aiPersistentScores = {};
 const aiNames = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India", "Juliet"];
@@ -149,7 +184,6 @@ let player = {
 let enemies = [];
 let lastSpawnTime = 0;
 
-// Delta Time 관련 변수
 let lastTime = 0;
 const TARGET_FPS = 120;
 
@@ -164,13 +198,42 @@ let keys = {};
 let messages = [];
 let winner = "";
 
+// Game Start 버튼 (팝업 제거 버전)
 document.getElementById("start-btn").addEventListener("click", () => {
-    const input = document.getElementById("nickname-input");
-    if(input.value.trim() !== "") {
-        playerNickname = input.value;
+    const nickInput = document.getElementById("nickname-input");
+    const loadInput = document.getElementById("load-input");
+
+    if (loadInput.value.trim() !== "") {
+        try {
+            const decodedData = JSON.parse(atob(loadInput.value.trim()));
+            if (decodedData.n && typeof decodedData.e === "number") {
+                playerNickname = decodedData.n;
+                totalEXP = decodedData.e;
+                // alert 제거됨
+            }
+        } catch (e) {
+            alert("Invalid Save Code!");
+            return; 
+        }
+    } else {
+        if(nickInput.value.trim() !== "") {
+            playerNickname = nickInput.value;
+        }
     }
+
     document.getElementById("ui-layer").style.display = "none";
+    loadInput.value = ""; 
     gameState = "menu";
+});
+
+document.getElementById("save-confirm-btn").addEventListener("click", () => {
+    document.getElementById("save-layer").style.display = "none";
+    document.getElementById("ui-layer").style.display = "block";
+    gameState = "nickname";
+    
+    enemies = [];
+    playerScore = 0;
+    winner = "";
 });
 
 document.addEventListener("keydown", e => {
@@ -202,21 +265,39 @@ canvas.addEventListener("click", e => {
         ) {
             respawnPlayer();
         }
+        else if (
+            mx > canvas.width/2 - 100 && mx < canvas.width/2 + 100 &&
+            my > canvas.height/2 + 150 && my < canvas.height/2 + 230
+        ) {
+            backToLobby();
+        }
     }
 });
 
+function backToLobby() {
+    const message = `Are you sure you want to quit?\nYou'll earn exp equal to your highest score in this game.`;
+    const userConfirmed = confirm(message);
+
+    if (userConfirmed) {
+        totalEXP += playerScore;
+        const saveData = { n: playerNickname, e: totalEXP };
+        const saveCode = btoa(JSON.stringify(saveData));
+
+        document.getElementById("save-code-display").value = saveCode;
+        document.getElementById("save-layer").style.display = "block";
+        
+        gameState = "save_screen"; 
+    }
+}
+
 function createEnemy() {
     if (enemies.length >= 10) return;
-
     const currentAiNames = enemies.map(en => en.name);
     const availableNames = aiNames.filter(name => !currentAiNames.includes(name));
-    
     const assignedName = availableNames.length > 0 
         ? availableNames[Math.floor(Math.random() * availableNames.length)] 
         : "Bot_" + Math.floor(Math.random() * 100);
-
     let initialScore = aiPersistentScores[assignedName] || 0;
-
     enemies.push({
         x: Math.random() * (canvas.width - 60),
         y: Math.random() * (canvas.height - 60),
@@ -257,23 +338,13 @@ function respawnPlayer() {
 }
 
 function addMessage(text, x, y) {
-    messages.push({
-        text: text,
-        x: x,
-        y: y,
-        time: Date.now()
-    });
+    messages.push({ text: text, x: x, y: y, time: Date.now() });
 }
 
 function updateBattle(dt) {
     let now = Date.now();
     const correction = dt * TARGET_FPS;
-
-    if (now - lastSpawnTime > 5000) {
-        createEnemy();
-        lastSpawnTime = now;
-    }
-
+    if (now - lastSpawnTime > 5000) { createEnemy(); lastSpawnTime = now; }
     if (player.hp > 0) {
         let ax = 0, ay = 0;
         if (keys["ArrowLeft"]) ax -= 1;
@@ -282,53 +353,34 @@ function updateBattle(dt) {
         if (keys["ArrowDown"]) ay += 1;
         let len = Math.sqrt(ax * ax + ay * ay);
         if (len > 0) { ax /= len; ay /= len; }
-
         player.vx += (ax * player.accel) * correction;
         player.vy += (ay * player.accel) * correction;
         player.x += player.vx * correction;
         player.y += player.vy * correction;
-        
         player.vx *= Math.pow(player.friction, correction);
         player.vy *= Math.pow(player.friction, correction);
     }
-
     player.x = Math.max(0, Math.min(canvas.width - player.size, player.x));
     player.y = Math.max(0, Math.min(canvas.height - player.size, player.y));
 
     enemies.forEach((en) => {
         let targets = [];
         if (player.hp > 0) targets.push({x: player.x, y: player.y, hp: player.hp, isPlayer: true});
-        enemies.forEach(other => {
-            if (other.id !== en.id) targets.push({x: other.x, y: other.y, hp: other.hp, isPlayer: false});
-        });
-
+        enemies.forEach(other => { if (other.id !== en.id) targets.push({x: other.x, y: other.y, hp: other.hp, isPlayer: false}); });
         let closest = null;
         let minDist = Infinity;
         targets.forEach(t => {
             let d = Math.sqrt((en.x - t.x)**2 + (en.y - t.y)**2);
             if (d < minDist) { minDist = d; closest = t; }
         });
-
         if (closest) {
-            let dx = closest.x - en.x;
-            let dy = closest.y - en.y;
+            let dx = closest.x - en.x; let dy = closest.y - en.y;
             if (minDist > 0) {
-                let direction = 1; // 기본은 공격(추격)
-
-                // HP가 50% 미만(2 이하)일 때 로직
-                if (en.hp <= 2) {
-                    // 타겟의 HP가 자신보다 낮을 때만 공격(1), 아니면 도망(-1)
-                    direction = (closest.hp < en.hp) ? 1 : -1;
-                } else {
-                    // HP가 50% 이상이면 무조건 공격
-                    direction = 1;
-                }
-                
+                let direction = (en.hp <= 2 && closest.hp >= en.hp) ? -1 : 1;
                 en.x += (dx / minDist) * en.speed * direction * correction;
                 en.y += (dy / minDist) * en.speed * direction * correction;
             }
         }
-
         en.x = Math.max(0, Math.min(canvas.width - en.size, en.x));
         en.y = Math.max(0, Math.min(canvas.height - en.size, en.y));
 
@@ -341,7 +393,6 @@ function updateBattle(dt) {
                 let nx = dx / dist; let ny = dy / dist;
                 player.x += nx * overlap/2; player.y += ny * overlap/2;
                 en.x -= nx * overlap/2; en.y -= ny * overlap/2;
-
                 if (now - player.lastAttack > 500) {
                     player.lastAttack = now;
                     if (Math.random() > 0.7) {
@@ -369,7 +420,6 @@ function updateBattle(dt) {
                 }
             }
         }
-
         enemies.forEach(other => {
             if (en.id === other.id) return;
             let dx = (other.x + other.size/2) - (en.x + en.size/2);
@@ -379,7 +429,6 @@ function updateBattle(dt) {
                 let overlap = en.size - dist;
                 en.x -= (dx/dist) * overlap/2; en.y -= (dy/dist) * overlap/2;
                 other.x += (dx/dist) * overlap/2; other.y += (dy/dist) * overlap/2;
-
                 if (now - en.lastAttack > 800) {
                     en.lastAttack = now;
                     if (Math.random() > 0.75) {
@@ -396,66 +445,33 @@ function updateBattle(dt) {
             }
         });
     });
-
-    enemies.forEach(en => {
-        if(en.hp <= 0) {
-            aiPersistentScores[en.name] = Math.floor(en.score / 2);
-        }
-    });
-
+    enemies.forEach(en => { if(en.hp <= 0) aiPersistentScores[en.name] = Math.floor(en.score / 2); });
     enemies = enemies.filter(en => en.hp > 0);
     messages = messages.filter(m => Date.now() - m.time < 700);
-
     if (player.hp <= 0 && winner === "") { winner = "YOU DIED"; }
 }
 
 function drawHPBar(x, y, hp, isPlayer = false, name = ""){
-    const width = 60;
-    const height = 8;
-    ctx.fillStyle = "white";
-    ctx.font = "bold 14px Arial";
-    ctx.textAlign = "center";
+    const width = 60; const height = 8;
+    ctx.fillStyle = "white"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center";
     ctx.fillText(name, x + width/2, y - 20);
-
-    ctx.fillStyle="gray";
-    ctx.fillRect(x, y, width, height);
-    if(isPlayer) { ctx.fillStyle = (hp > 2) ? "blue" : "red"; }
-    else { ctx.fillStyle = (hp > 2) ? "lime" : "yellow"; }
+    ctx.fillStyle="gray"; ctx.fillRect(x, y, width, height);
+    ctx.fillStyle = isPlayer ? (hp > 2 ? "blue" : "red") : (hp > 2 ? "lime" : "yellow");
     ctx.fillRect(x, y, width * (Math.max(0, hp) / 4), height);
 }
 
 function drawLeaderboard() {
     let participants = [{ name: playerNickname, score: playerScore, isPlayer: true }];
-    
-    enemies.forEach(en => {
-        participants.push({ name: en.name, score: en.score, isPlayer: false });
-    });
-
+    enemies.forEach(en => { participants.push({ name: en.name, score: en.score, isPlayer: false }); });
     const activeNames = enemies.map(en => en.name);
-    aiNames.forEach(name => {
-        if(!activeNames.includes(name)) {
-            participants.push({ name: name, score: aiPersistentScores[name], isPlayer: false });
-        }
-    });
-
+    aiNames.forEach(name => { if(!activeNames.includes(name)) participants.push({ name: name, score: aiPersistentScores[name], isPlayer: false }); });
     participants.sort((a, b) => b.score - a.score);
     let top5 = participants.slice(0, 5);
-
-    const x = 20;
-    const y = 20;
-    const w = 220;
-    const h = 30 + (top5.length * 25);
-
-    ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-    ctx.strokeRect(x, y, w, h);
-
-    ctx.fillStyle = "yellow";
-    ctx.font = "bold 16px Arial";
-    ctx.textAlign = "left";
+    const x = 20; const y = 20; const w = 220; const h = 30 + (top5.length * 25);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.5)"; ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)"; ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = "yellow"; ctx.font = "bold 16px Arial"; ctx.textAlign = "left";
     ctx.fillText("TOP 5 RANKING", x + 15, y + 25);
-
     top5.forEach((p, idx) => {
         ctx.fillStyle = p.isPlayer ? "#00ffff" : "white"; 
         ctx.font = p.isPlayer ? "bold 15px Arial" : "14px Arial";
@@ -463,74 +479,71 @@ function drawLeaderboard() {
     });
 }
 
+// 메뉴 화면 수정 (계정 EXP 박스 추가)
 function drawMenu(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
+    
+    // Play 버튼 그리기
     playButton.x = canvas.width/2 - playButton.width/2;
     playButton.y = canvas.height/2 - playButton.height/2;
-    ctx.fillStyle="white";
-    ctx.fillRect(playButton.x, playButton.y, playButton.width, playButton.height);
-    ctx.fillStyle="black";
-    ctx.font="40px Arial";
-    ctx.textAlign="center";
+    ctx.fillStyle="white"; ctx.fillRect(playButton.x, playButton.y, playButton.width, playButton.height);
+    ctx.fillStyle="black"; ctx.font="40px Arial"; ctx.textAlign="center";
     ctx.fillText("PLAY", canvas.width/2, canvas.height/2+15);
+
+    // [추가] 계정 총 EXP 기록 박스 (Play 버튼 상단)
+    const boxW = 300;
+    const boxH = 60;
+    const boxX = canvas.width/2 - boxW/2;
+    const boxY = playButton.y - 100;
+
+    // 박스 배경
+    ctx.fillStyle = "rgba(0, 255, 255, 0.1)"; 
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.strokeStyle = "#0ff";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+    // 정보 텍스트
+    ctx.fillStyle = "white";
+    ctx.font = "bold 16px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(`${playerNickname}'S ACCOUNT INFO`, canvas.width/2, boxY + 22);
+    
+    ctx.fillStyle = "#0ff";
+    ctx.font = "20px Consolas";
+    ctx.fillText(`TOTAL EXP: ${totalEXP.toLocaleString()}`, canvas.width/2, boxY + 48);
 }
 
 function drawBattle(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
-
-    if (player.hp > 0) {
-        ctx.drawImage(playerImg, player.x, player.y, player.size, player.size);
-        drawHPBar(player.x, player.y-15, player.hp, true, playerNickname); 
-    }
-
-    enemies.forEach(en => {
-        ctx.drawImage(enemyImg, en.x, en.y, en.size, en.size);
-        drawHPBar(en.x, en.y-15, en.hp, false, en.name);
-    });
-
-    ctx.fillStyle="white";
-    ctx.font="18px Arial";
-    ctx.textAlign="left";
+    if (player.hp > 0) { ctx.drawImage(playerImg, player.x, player.y, player.size, player.size); drawHPBar(player.x, player.y-15, player.hp, true, playerNickname); }
+    enemies.forEach(en => { ctx.drawImage(enemyImg, en.x, en.y, en.size, en.size); drawHPBar(en.x, en.y-15, en.hp, false, en.name); });
+    ctx.fillStyle="white"; ctx.font="18px Arial"; ctx.textAlign="left";
     messages.forEach(m=>{ ctx.fillText(m.text,m.x,m.y); });
-
     drawLeaderboard();
-
     if(player.hp <= 0){
-        ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle="red";
-        ctx.font="bold 70px Arial";
-        ctx.textAlign="center";
+        ctx.fillStyle = "rgba(0, 0, 0, 0.6)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle="red"; ctx.font="bold 70px Arial"; ctx.textAlign="center";
         ctx.fillText("YOU DIED", canvas.width/2, canvas.height/2);
-        ctx.fillStyle="white";
-        ctx.fillRect(canvas.width/2 - 100, canvas.height/2 + 50, 200, 80);
-        ctx.fillStyle="black";
-        ctx.font="30px Arial";
-        ctx.fillText("Play Again", canvas.width/2, canvas.height/2 + 100);
+        ctx.fillStyle="white"; ctx.fillRect(canvas.width/2 - 100, canvas.height/2 + 50, 200, 80);
+        ctx.fillStyle="black"; ctx.font="30px Arial"; ctx.fillText("Play Again", canvas.width/2, canvas.height/2 + 100);
+        ctx.fillStyle="gray"; ctx.fillRect(canvas.width/2 - 100, canvas.height/2 + 150, 200, 80);
+        ctx.fillStyle="white"; ctx.font="25px Arial"; ctx.fillText("Back to Lobby", canvas.width/2, canvas.height/2 + 200);
     }
-
-    ctx.fillStyle="white";
-    ctx.font="20px Arial";
-    ctx.textAlign="right";
+    ctx.fillStyle="white"; ctx.font="20px Arial"; ctx.textAlign="right";
     ctx.fillText("Enemies: " + enemies.length + "/10", canvas.width - 20, 30);
-    ctx.strokeStyle="white";
-    ctx.lineWidth=4;
-    ctx.strokeRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle="white"; ctx.lineWidth=4; ctx.strokeRect(0,0,canvas.width,canvas.height);
 }
 
 function gameLoop(timestamp){
     if(!lastTime) lastTime = timestamp;
     let dt = (timestamp - lastTime) / 1000;
     lastTime = timestamp;
-
     if (dt > 0.1) dt = 1 / TARGET_FPS;
-
     if(gameState==="nickname") ctx.clearRect(0,0,canvas.width,canvas.height);
     if(gameState==="menu") drawMenu();
-    if(gameState==="battle") { 
-        updateBattle(dt); 
-        drawBattle(); 
-    }
+    if(gameState==="battle") { updateBattle(dt); drawBattle(); }
+    if(gameState==="save_screen") drawBattle(); 
     requestAnimationFrame(gameLoop);
 }
 

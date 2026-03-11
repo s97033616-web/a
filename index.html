@@ -243,7 +243,7 @@ function startBattle() {
     player.vy = 0;
     createEnemy();
     lastSpawnTime = Date.now();
-    lastTime = 0; // 타임스탬프 초기화
+    lastTime = 0; 
 }
 
 function respawnPlayer() {
@@ -267,7 +267,6 @@ function addMessage(text, x, y) {
 
 function updateBattle(dt) {
     let now = Date.now();
-    // 120 FPS 기준 보정값
     const correction = dt * TARGET_FPS;
 
     if (now - lastSpawnTime > 5000) {
@@ -284,13 +283,11 @@ function updateBattle(dt) {
         let len = Math.sqrt(ax * ax + ay * ay);
         if (len > 0) { ax /= len; ay /= len; }
 
-        // 보정값을 적용한 가속 및 이동
         player.vx += (ax * player.accel) * correction;
         player.vy += (ay * player.accel) * correction;
         player.x += player.vx * correction;
         player.y += player.vy * correction;
         
-        // 지수적 마찰력 보정
         player.vx *= Math.pow(player.friction, correction);
         player.vy *= Math.pow(player.friction, correction);
     }
@@ -300,9 +297,9 @@ function updateBattle(dt) {
 
     enemies.forEach((en) => {
         let targets = [];
-        if (player.hp > 0) targets.push({x: player.x, y: player.y, isPlayer: true});
+        if (player.hp > 0) targets.push({x: player.x, y: player.y, hp: player.hp, isPlayer: true});
         enemies.forEach(other => {
-            if (other.id !== en.id) targets.push({x: other.x, y: other.y, isPlayer: false});
+            if (other.id !== en.id) targets.push({x: other.x, y: other.y, hp: other.hp, isPlayer: false});
         });
 
         let closest = null;
@@ -316,8 +313,17 @@ function updateBattle(dt) {
             let dx = closest.x - en.x;
             let dy = closest.y - en.y;
             if (minDist > 0) {
-                let direction = (en.hp <= 2) ? -1 : 1;
-                // AI 이동 속도 보정
+                let direction = 1; // 기본은 공격(추격)
+
+                // HP가 50% 미만(2 이하)일 때 로직
+                if (en.hp <= 2) {
+                    // 타겟의 HP가 자신보다 낮을 때만 공격(1), 아니면 도망(-1)
+                    direction = (closest.hp < en.hp) ? 1 : -1;
+                } else {
+                    // HP가 50% 이상이면 무조건 공격
+                    direction = 1;
+                }
+                
                 en.x += (dx / minDist) * en.speed * direction * correction;
                 en.y += (dy / minDist) * en.speed * direction * correction;
             }
@@ -517,7 +523,6 @@ function gameLoop(timestamp){
     let dt = (timestamp - lastTime) / 1000;
     lastTime = timestamp;
 
-    // 비정상적인 프레임 지연(탭 전환 등) 방지
     if (dt > 0.1) dt = 1 / TARGET_FPS;
 
     if(gameState==="nickname") ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -529,7 +534,6 @@ function gameLoop(timestamp){
     requestAnimationFrame(gameLoop);
 }
 
-// 루프 시작
 requestAnimationFrame(gameLoop);
 
 </script>

@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>AI Battle - Bounty System (Delta Time)</title>
+<title>AI Battle - Persistent Rank System</title>
 
 <style>
 body{
@@ -14,7 +14,6 @@ body{
 canvas{
     display:block;
 }
-/* 기존 로비 UI */
 #ui-layer {
     position: fixed;
     top: 50%;
@@ -24,7 +23,6 @@ canvas{
     color: white;
     z-index: 10000;
 }
-/* 세이브 코드 표시용 새 레이어 */
 #save-layer {
     position: fixed;
     top: 50%;
@@ -158,9 +156,14 @@ let playerNickname = "Player";
 let playerScore = 0; 
 let totalEXP = 0; 
 
+// AI 데이터 저장소 (세션 유지용)
 let aiPersistentScores = {};
+let aiPersistentRanks = {}; // 랭크 고정용 객체 추가
 const aiNames = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India", "Juliet"];
-aiNames.forEach(name => aiPersistentScores[name] = 0);
+
+aiNames.forEach(name => {
+    aiPersistentScores[name] = 0;
+});
 
 const playerImg = new Image();
 playerImg.src = "images/ghost.png";
@@ -198,7 +201,24 @@ let keys = {};
 let messages = [];
 let winner = "";
 
-// Game Start 버튼 (팝업 제거 버전)
+function getRankInfo(exp) {
+    let rank = 1;
+    let required = 100;
+    let cumulative = 0;
+
+    while (exp >= cumulative + required) {
+        cumulative += required;
+        rank++;
+        required *= 1.5; 
+    }
+    
+    return {
+        rank: rank,
+        currentInLevel: exp - cumulative,
+        nextRequired: required
+    };
+}
+
 document.getElementById("start-btn").addEventListener("click", () => {
     const nickInput = document.getElementById("nickname-input");
     const loadInput = document.getElementById("load-input");
@@ -209,7 +229,6 @@ document.getElementById("start-btn").addEventListener("click", () => {
             if (decodedData.n && typeof decodedData.e === "number") {
                 playerNickname = decodedData.n;
                 totalEXP = decodedData.e;
-                // alert 제거됨
             }
         } catch (e) {
             alert("Invalid Save Code!");
@@ -297,13 +316,25 @@ function createEnemy() {
     const assignedName = availableNames.length > 0 
         ? availableNames[Math.floor(Math.random() * availableNames.length)] 
         : "Bot_" + Math.floor(Math.random() * 100);
+    
     let initialScore = aiPersistentScores[assignedName] || 0;
+    
+    // 랭크 유지 로직: 저장된 랭크가 없으면 새로 할당
+    if (!aiPersistentRanks[assignedName]) {
+        let pRank = getRankInfo(totalEXP).rank;
+        let minR = 1;
+        let maxR = pRank + 5;
+        aiPersistentRanks[assignedName] = Math.floor(Math.random() * (maxR - minR + 1)) + minR;
+    }
+    let assignedRank = aiPersistentRanks[assignedName];
+
     enemies.push({
         x: Math.random() * (canvas.width - 60),
         y: Math.random() * (canvas.height - 60),
         size: 60,
         hp: 4,
         score: initialScore,
+        rank: assignedRank,
         speed: 1.5 + Math.random(),
         lastAttack: 0,
         id: Date.now() + Math.random(),
@@ -337,8 +368,8 @@ function respawnPlayer() {
     winner = ""; 
 }
 
-function addMessage(text, x, y) {
-    messages.push({ text: text, x: x, y: y, time: Date.now() });
+function addMessage(text, x, y, bonusText = "") {
+    messages.push({ text: text, x: x, y: y, bonusText: bonusText, time: Date.now() });
 }
 
 function updateBattle(dt) {
@@ -398,9 +429,13 @@ function updateBattle(dt) {
                     if (Math.random() > 0.7) {
                         if (en.hp === 1) { 
                             player.hp = 4; 
-                            let bounty = 100 + Math.floor(en.score * 0.1);
-                            playerScore += bounty; 
-                            addMessage(`KILL! +${bounty}`, player.x, player.y); 
+                            let baseBounty = 100 + Math.floor(en.score * 0.1);
+                            let rankInfo = getRankInfo(totalEXP);
+                            let rankBonus = rankInfo.rank > 1 ? (rankInfo.rank - 1) * 5 : 0;
+                            playerScore += (baseBounty + rankBonus); 
+                            
+                            let bonusMsg = rankBonus > 0 ? `+${rankBonus}` : "";
+                            addMessage(`KILL! +${baseBounty}`, player.x, player.y, bonusMsg); 
                         }
                         en.hp--; addMessage("HIT!", en.x, en.y);
                     }
@@ -410,10 +445,13 @@ function updateBattle(dt) {
                     if (Math.random() > 0.8) {
                         if (player.hp === 1) { 
                             en.hp = 4; 
-                            let bounty = 100 + Math.floor(playerScore * 0.1);
-                            en.score += bounty; 
+                            let baseBounty = 100 + Math.floor(playerScore * 0.1);
+                            let rankBonus = en.rank > 1 ? (en.rank - 1) * 5 : 0;
+                            en.score += (baseBounty + rankBonus); 
                             aiPersistentScores[en.name] = en.score;
-                            addMessage(`AI KILL! +${bounty}`, en.x, en.y); 
+                            
+                            let bonusMsg = rankBonus > 0 ? `+${rankBonus}` : "";
+                            addMessage(`AI KILL! +${baseBounty}`, en.x, en.y, bonusMsg); 
                         }
                         player.hp--; addMessage("HIT!", player.x, player.y);
                     }
@@ -434,10 +472,13 @@ function updateBattle(dt) {
                     if (Math.random() > 0.75) {
                         if (other.hp === 1) { 
                             en.hp = 4; 
-                            let bounty = 100 + Math.floor(other.score * 0.1);
-                            en.score += bounty; 
+                            let baseBounty = 100 + Math.floor(other.score * 0.1);
+                            let rankBonus = en.rank > 1 ? (en.rank - 1) * 5 : 0;
+                            en.score += (baseBounty + rankBonus); 
                             aiPersistentScores[en.name] = en.score;
-                            addMessage(`AI KILL! +${bounty}`, en.x, en.y); 
+                            
+                            let bonusMsg = rankBonus > 0 ? `+${rankBonus}` : "";
+                            addMessage(`AI KILL! +${baseBounty}`, en.x, en.y, bonusMsg); 
                         }
                         other.hp--; addMessage("AI HIT!", other.x, other.y);
                     }
@@ -451,10 +492,34 @@ function updateBattle(dt) {
     if (player.hp <= 0 && winner === "") { winner = "YOU DIED"; }
 }
 
-function drawHPBar(x, y, hp, isPlayer = false, name = ""){
+function drawHPBar(x, y, hp, isPlayer = false, name = "", rank = 1){
     const width = 60; const height = 8;
-    ctx.fillStyle = "white"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center";
-    ctx.fillText(name, x + width/2, y - 20);
+    ctx.font = "bold 13px Arial"; 
+    ctx.textAlign = "center";
+
+    let rankColor = "white"; 
+    if (rank >= 20) {
+        rankColor = (Math.floor(Date.now() / 400) % 2 === 0) ? "red" : "yellow";
+    } else if (rank >= 15) {
+        rankColor = "skyblue";
+    } else if (rank >= 10) {
+        rankColor = "purple";
+    } else if (rank >= 5) {
+        rankColor = "yellow";
+    }
+
+    const rankText = `[${rank}] `;
+    const fullText = rankText + name;
+    const fullWidth = ctx.measureText(fullText).width;
+    const startX = x + width/2 - fullWidth/2;
+
+    ctx.fillStyle = rankColor;
+    ctx.textAlign = "left";
+    ctx.fillText(rankText, startX, y - 20);
+
+    ctx.fillStyle = "white";
+    ctx.fillText(name, startX + ctx.measureText(rankText).width, y - 20);
+
     ctx.fillStyle="gray"; ctx.fillRect(x, y, width, height);
     ctx.fillStyle = isPlayer ? (hp > 2 ? "blue" : "red") : (hp > 2 ? "lime" : "yellow");
     ctx.fillRect(x, y, width * (Math.max(0, hp) / 4), height);
@@ -479,47 +544,42 @@ function drawLeaderboard() {
     });
 }
 
-// 메뉴 화면 수정 (계정 EXP 박스 추가)
 function drawMenu(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    
-    // Play 버튼 그리기
     playButton.x = canvas.width/2 - playButton.width/2;
     playButton.y = canvas.height/2 - playButton.height/2;
     ctx.fillStyle="white"; ctx.fillRect(playButton.x, playButton.y, playButton.width, playButton.height);
     ctx.fillStyle="black"; ctx.font="40px Arial"; ctx.textAlign="center";
     ctx.fillText("PLAY", canvas.width/2, canvas.height/2+15);
-
-    // [추가] 계정 총 EXP 기록 박스 (Play 버튼 상단)
-    const boxW = 300;
-    const boxH = 60;
-    const boxX = canvas.width/2 - boxW/2;
-    const boxY = playButton.y - 100;
-
-    // 박스 배경
-    ctx.fillStyle = "rgba(0, 255, 255, 0.1)"; 
-    ctx.fillRect(boxX, boxY, boxW, boxH);
-    ctx.strokeStyle = "#0ff";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(boxX, boxY, boxW, boxH);
-
-    // 정보 텍스트
-    ctx.fillStyle = "white";
-    ctx.font = "bold 16px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText(`${playerNickname}'S ACCOUNT INFO`, canvas.width/2, boxY + 22);
-    
-    ctx.fillStyle = "#0ff";
-    ctx.font = "20px Consolas";
-    ctx.fillText(`TOTAL EXP: ${totalEXP.toLocaleString()}`, canvas.width/2, boxY + 48);
+    const boxW = 320; const boxH = 125; 
+    const boxX = canvas.width/2 - boxW/2; const boxY = playButton.y - 165;
+    ctx.fillStyle = "rgba(0, 255, 255, 0.1)"; ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.strokeStyle = "#0ff"; ctx.lineWidth = 2; ctx.strokeRect(boxX, boxY, boxW, boxH);
+    const info = getRankInfo(totalEXP);
+    ctx.fillStyle = "white"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center";
+    ctx.fillText(`${playerNickname}'S ACCOUNT INFO`, canvas.width/2, boxY + 20);
+    ctx.fillStyle = "#0ff"; ctx.font = "18px Consolas"; ctx.fillText(`TOTAL EXP: ${totalEXP.toLocaleString()}`, canvas.width/2, boxY + 45);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 22px Arial"; ctx.fillText(`RANK ${info.rank}`, canvas.width/2, boxY + 75);
+    const barW = 200; const barH = 6;
+    ctx.fillStyle = "#333"; ctx.fillRect(canvas.width/2 - barW/2, boxY + 90, barW, barH);
+    ctx.fillStyle = "#0ff"; ctx.fillRect(canvas.width/2 - barW/2, boxY + 90, barW * (info.currentInLevel / info.nextRequired), barH);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.8)"; ctx.font = "12px Consolas";
+    ctx.fillText(`${info.currentInLevel.toLocaleString()} / ${info.nextRequired.toLocaleString()}`, canvas.width/2, boxY + 112);
 }
 
 function drawBattle(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    if (player.hp > 0) { ctx.drawImage(playerImg, player.x, player.y, player.size, player.size); drawHPBar(player.x, player.y-15, player.hp, true, playerNickname); }
-    enemies.forEach(en => { ctx.drawImage(enemyImg, en.x, en.y, en.size, en.size); drawHPBar(en.x, en.y-15, en.hp, false, en.name); });
-    ctx.fillStyle="white"; ctx.font="18px Arial"; ctx.textAlign="left";
-    messages.forEach(m=>{ ctx.fillText(m.text,m.x,m.y); });
+    let pRank = getRankInfo(totalEXP).rank;
+    if (player.hp > 0) { ctx.drawImage(playerImg, player.x, player.y, player.size, player.size); drawHPBar(player.x, player.y-15, player.hp, true, playerNickname, pRank); }
+    enemies.forEach(en => { ctx.drawImage(enemyImg, en.x, en.y, en.size, en.size); drawHPBar(en.x, en.y-15, en.hp, false, en.name, en.rank); });
+    ctx.font="18px Arial"; ctx.textAlign="left";
+    messages.forEach(m=>{ 
+        ctx.fillStyle = "white"; ctx.fillText(m.text, m.x, m.y);
+        if(m.bonusText) {
+            let offset = ctx.measureText(m.text).width;
+            ctx.fillStyle = "#0ff"; ctx.fillText(m.bonusText, m.x + offset, m.y);
+        }
+    });
     drawLeaderboard();
     if(player.hp <= 0){
         ctx.fillStyle = "rgba(0, 0, 0, 0.6)"; ctx.fillRect(0, 0, canvas.width, canvas.height);

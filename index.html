@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>AI Battle - Persistent Rank System</title>
+<title>AI Battle - Legacy Support & Flexible Nickname</title>
 
 <style>
 body{
@@ -68,16 +68,16 @@ button {
 
 <div id="ui-layer">
     <h2>AI BATTLE</h2>
-    <input type="text" id="nickname-input" placeholder="Enter Nickname" maxlength="10">
+    <input type="text" id="nickname-input" placeholder="Enter Nickname for this session" maxlength="10">
     <br>
-    <input type="text" id="load-input" placeholder="Paste Save Code Here (Optional)">
+    <input type="text" id="load-input" placeholder="Paste Account Save Code (Optional)">
     <br>
     <button id="start-btn">Game Start</button>
 </div>
 
 <div id="save-layer">
     <h3>SAVE YOUR PROGRESS</h3>
-    <p>Copy this code to load your EXP later:</p>
+    <p>Copy this code to load your EXP next time:</p>
     <textarea id="save-code-display" readonly rows="3"></textarea>
     <br>
     <button id="save-confirm-btn">Confirm & Go to Lobby</button>
@@ -152,13 +152,13 @@ window.addEventListener("resize", resizeGame);
 resizeGame();
 
 let gameState = "nickname"; 
-let playerNickname = "Player";
+let playerNickname = "Player"; 
+let accountID = "USER_" + Math.floor(Math.random() * 1000000); // 기본 랜덤 ID
 let playerScore = 0; 
 let totalEXP = 0; 
 
-// AI 데이터 저장소 (세션 유지용)
 let aiPersistentScores = {};
-let aiPersistentRanks = {}; // 랭크 고정용 객체 추가
+let aiPersistentRanks = {}; 
 const aiNames = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India", "Juliet"];
 
 aiNames.forEach(name => {
@@ -226,18 +226,26 @@ document.getElementById("start-btn").addEventListener("click", () => {
     if (loadInput.value.trim() !== "") {
         try {
             const decodedData = JSON.parse(atob(loadInput.value.trim()));
-            if (decodedData.n && typeof decodedData.e === "number") {
-                playerNickname = decodedData.n;
+            
+            // 하위 호환성 체크: id가 없고 n(nickname)이 있는 경우 닉네임을 ID로 전환
+            if (decodedData.id && typeof decodedData.e === "number") {
+                accountID = decodedData.id;
+                totalEXP = decodedData.e;
+            } else if (decodedData.n && typeof decodedData.e === "number") {
+                accountID = decodedData.n; // 기존 닉네임을 고유 ID로 취급
                 totalEXP = decodedData.e;
             }
         } catch (e) {
             alert("Invalid Save Code!");
             return; 
         }
+    }
+
+    // 닉네임 설정: 입력값이 있으면 사용, 없으면 ID나 기본값 사용
+    if(nickInput.value.trim() !== "") {
+        playerNickname = nickInput.value;
     } else {
-        if(nickInput.value.trim() !== "") {
-            playerNickname = nickInput.value;
-        }
+        playerNickname = accountID.startsWith("USER_") ? "Player" : accountID;
     }
 
     document.getElementById("ui-layer").style.display = "none";
@@ -299,7 +307,8 @@ function backToLobby() {
 
     if (userConfirmed) {
         totalEXP += playerScore;
-        const saveData = { n: playerNickname, e: totalEXP };
+        // 저장 시에는 현재 닉네임이 아닌 고유 accountID를 저장
+        const saveData = { id: accountID, e: totalEXP };
         const saveCode = btoa(JSON.stringify(saveData));
 
         document.getElementById("save-code-display").value = saveCode;
@@ -319,7 +328,6 @@ function createEnemy() {
     
     let initialScore = aiPersistentScores[assignedName] || 0;
     
-    // 랭크 유지 로직: 저장된 랭크가 없으면 새로 할당
     if (!aiPersistentRanks[assignedName]) {
         let pRank = getRankInfo(totalEXP).rank;
         let minR = 1;
@@ -558,13 +566,14 @@ function drawMenu(){
     const info = getRankInfo(totalEXP);
     ctx.fillStyle = "white"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center";
     ctx.fillText(`${playerNickname}'S ACCOUNT INFO`, canvas.width/2, boxY + 20);
-    ctx.fillStyle = "#0ff"; ctx.font = "18px Consolas"; ctx.fillText(`TOTAL EXP: ${totalEXP.toLocaleString()}`, canvas.width/2, boxY + 45);
-    ctx.fillStyle = "#fff"; ctx.font = "bold 22px Arial"; ctx.fillText(`RANK ${info.rank}`, canvas.width/2, boxY + 75);
+    ctx.fillStyle = "#aaa"; ctx.font = "12px Consolas"; ctx.fillText(`ID: ${accountID}`, canvas.width/2, boxY + 33);
+    ctx.fillStyle = "#0ff"; ctx.font = "18px Consolas"; ctx.fillText(`TOTAL EXP: ${totalEXP.toLocaleString()}`, canvas.width/2, boxY + 53);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 22px Arial"; ctx.fillText(`RANK ${info.rank}`, canvas.width/2, boxY + 83);
     const barW = 200; const barH = 6;
-    ctx.fillStyle = "#333"; ctx.fillRect(canvas.width/2 - barW/2, boxY + 90, barW, barH);
-    ctx.fillStyle = "#0ff"; ctx.fillRect(canvas.width/2 - barW/2, boxY + 90, barW * (info.currentInLevel / info.nextRequired), barH);
+    ctx.fillStyle = "#333"; ctx.fillRect(canvas.width/2 - barW/2, boxY + 98, barW, barH);
+    ctx.fillStyle = "#0ff"; ctx.fillRect(canvas.width/2 - barW/2, boxY + 98, barW * (info.currentInLevel / info.nextRequired), barH);
     ctx.fillStyle = "rgba(255, 255, 255, 0.8)"; ctx.font = "12px Consolas";
-    ctx.fillText(`${info.currentInLevel.toLocaleString()} / ${info.nextRequired.toLocaleString()}`, canvas.width/2, boxY + 112);
+    ctx.fillText(`${info.currentInLevel.toLocaleString()} / ${info.nextRequired.toLocaleString()}`, canvas.width/2, boxY + 118);
 }
 
 function drawBattle(){

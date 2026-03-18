@@ -506,8 +506,28 @@ function drawHPBar(x, y, hp, isPlayer = false, name = "", rank = 1){
     ctx.textAlign = "center";
 
     let rankColor = "white"; 
-    if (rank >= 20) {
-        rankColor = (Math.floor(Date.now() / 400) % 2 === 0) ? "red" : "yellow";
+
+    // 애니메이션을 위한 공통 ratio (sin 함수 활용)
+    let ratio = (Math.sin(Date.now() / 600) + 1) / 2;
+
+    if (rank >= 30) {
+        // 30+ : 보라색(128, 0, 128)과 흰색(255, 255, 255) 사이 보간
+        let r = Math.floor(128 + (255 - 128) * ratio);
+        let g = Math.floor(0 + (255 - 0) * ratio);
+        let b = Math.floor(128 + (255 - 128) * ratio);
+        rankColor = `rgb(${r}, ${g}, ${b})`;
+    } else if (rank >= 25) {
+        // 25~29 : 노란색(255, 255, 0)과 파란색(0, 0, 255) 사이 보간
+        let r = Math.floor(255 * (1 - ratio));
+        let g = Math.floor(255 * (1 - ratio));
+        let b = Math.floor(255 * ratio);
+        rankColor = `rgb(${r}, ${g}, ${b})`;
+    } else if (rank >= 20) {
+        // 20~24 : 빨간색과 노란색 사이 보간 (기존 유지)
+        let r = 255;
+        let g = Math.floor(255 * ratio);
+        let b = 0;
+        rankColor = `rgb(${r}, ${g}, ${b})`;
     } else if (rank >= 15) {
         rankColor = "skyblue";
     } else if (rank >= 10) {
